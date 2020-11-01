@@ -1,5 +1,6 @@
 # coding=utf-8
 import argparse
+import time
 
 import requests
 
@@ -46,20 +47,20 @@ def is_valid(mode, country):
         'tc', 'td', 'tf', 'tg', 'th', 'tj', 'tk', 'tm', 'tn', 'to', 'tp',
         'tr', 'tt', 'tv', 'tw', 'tz', 'ua', 'ug', 'um', 'us', 'uy', 'uz',
         'va', 'vc', 've', 'vg', 'vi', 'vn', 'vu', 'wf', 'wk', 'ws', 'ye',
-        'yu', 'za', 'zm', 'zr', 'zw'
+        'yu', 'za', 'zm', 'zr', 'zw', ''
     ]
     if mode not in modes:
         raise my_exceptions.ModeError('Неверное значение аргумента --mode')
 
     if country is not None and country.lower() not in countries:
-        raise my_exceptions.CountryError('неверное значение аргумента --country')
+        raise my_exceptions.CountryError('неверное значение '
+                                         'аргумента --country')
 
     return True
 
 
 def delete_user_id_field(old_data):
-    """
-    Удаляет из словаря пару ключ 'user_id'.
+    """Удаляет из словаря пару ключ 'user_id'.
     Parameters:
         old_data (list): список словарей, содержащий все
     записи, полученные из запроса
@@ -69,12 +70,11 @@ def delete_user_id_field(old_data):
 
 
 def request_response(params):
-    """
-        Выполняет запрос к api_server.
+    """Выполняет запрос к api_server.
         Parameters:
             params (dict): словарь, параметров запроса
         Returns response (requests.models.Response): ответ от api_server
-        """
+    """
     api_server = 'https://www.diabotical.com/api/v0/stats/leaderboard'
     try:
         return requests.get(api_server, params=params)
@@ -85,37 +85,56 @@ def request_response(params):
 def get_result(count, user_id, country, json_response):
     """Выполняет подготовку данных для вывода.
     Parameters:
-        args (dict): словарь, содержащий все аргументы и их значения,
-    полученные из командной строки
-        result (str): сообщение о результате выполнения запроса.
+        count (int): количество записей в выборке;
+        user_id (str): user_id пользователя, для которого выполняется запрос;
+        country (str): страна, для которой выполняется запрос;
+        json_response (dict): словарь, содержащий все аргументы и
+    их значения, полученные из командной строки
+    Returns:
+        result (dict): словарь с результатами выполнения запроса;
+        result (int): число записей удовлетворяющих условиям запроса.
     """
-    result = json_response.get('leaderboard', '')
-    if count is None:
-        count = len(json_response.get('leaderboard', 0))
-    result = result[:count]
+    result = json_response.get('leaderboard', '')[:count]
 
     if user_id is not None:
-        is_find_user_id = False
-        for user in result:
-            if user['user_id'] == user_id:
-                is_find_user_id = True
-                result = [user]
-                break
-        if not is_find_user_id:
-            result = []
+        result = get_info_for_user_id(result, user_id)
 
     if country is not None:
-        country_count = 0
-        for user in result:
-            if user['country'] == country:
-                country_count += 1
-        result = country_count
+        result = get_info_for_country(result, country)
 
     if isinstance(result, list):
-        delete_user_id_field(result)
+        if result:
+            delete_user_id_field(result)
         result = {'leaderboard': result}
 
     return result
+
+
+def get_info_for_user_id(data, user_id):
+    """Получает информацию о пользователе из результатов запроса.
+        Parameters:
+            data (list): список словарей, содержащий все
+    записи, полученные из запроса
+            user_id (str): значение user_id, запрошенного пользователя
+        Returns:
+            result (list): список сведений о пользователе.
+    """
+    result = [user for user in data if user['user_id'] == user_id]
+    return result
+
+
+def get_info_for_country(data, country):
+    """Получает информацию о пользователе из результатов запроса.
+        Parameters:
+            data (list): список словарей, содержащий все
+    записи, полученные из запроса
+            country (str): значение country, запрошенной страны
+        Returns:
+            country_count (int): количество игроков заданной страны.
+    """
+    country_count = sum([1 if user['country'] == country else 0
+                         for user in data])
+    return country_count
 
 
 def parse_command_line():
@@ -163,16 +182,45 @@ def main():
         count = context['count']
         user_id = context['user_id']
         country = context['country']
-        params = {
-            'mode': mode,
-            'offset': 0
-        }
+        lines_per_page = 20  # максимальное количество результатов на странице
+        max_count = 500  # максимум результатов, хранящихся в таблице
+
+        if count is None:
+            count = lines_per_page
+
+        count = min(max_count, count)
 
         result = 'Error in arguments'
         if is_valid(mode, country):
-            response = request_response(params)
-            json_response = response.json()
-            result = get_result(count, user_id, country, json_response)
+            offset = 0
+            params = {
+                'mode': mode,
+                'offset': 0
+            }
+            # Считаем количество запросов к api в зависимости от count
+            n = (count + lines_per_page - 1) // lines_per_page
+            for _ in range(n):
+                params['offset'] = offset
+                response = request_response(params)
+                json_response = response.json()
+                current_result = get_result(count, user_id,
+                                            country, json_response)
+                if (isinstance(result, str) and
+                        isinstance(current_result, int)):
+                    result = 0
+                elif (isinstance(result, str) and
+                      isinstance(current_result, dict)):
+                    result = {'leaderboard': []}
+
+                if isinstance(current_result, int):
+                    result += current_result
+                else:
+                    result['leaderboard'].extend(
+                        current_result['leaderboard']
+                    )
+                offset += lines_per_page
+                count -= lines_per_page
+                time.sleep(0.2)
     except Exception as e:
         result = e
 

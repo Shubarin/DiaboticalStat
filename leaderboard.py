@@ -77,7 +77,11 @@ def request_response(params):
     """
     api_server = 'https://www.diabotical.com/api/v0/stats/leaderboard'
     try:
-        return requests.get(api_server, params=params)
+        response = requests.get(api_server, params=params)
+        if response.status_code == 200:
+            return response
+        else:
+            raise my_exceptions.UnavailableServer('ошибка сервера')
     except:
         raise my_exceptions.UnavailableServer('ошибка сервера')
 
@@ -171,13 +175,16 @@ def parse_command_line():
     return args
 
 
-def main():
+def main(test_context=None):
     """Основная функция. Запускается при запуске файла в командной строке
     Returns:
         result (str): сообщение с результатом выполнения программы.
     """
     try:
-        context = vars(parse_command_line())  # приводим тип Namespace к dict
+        if not test_context:
+            context = vars(parse_command_line())  # приводим тип Namespace к dict
+        else:
+            context = test_context
         mode = context['mode']
         count = context['count']
         user_id = context['user_id']
@@ -223,6 +230,9 @@ def main():
                 time.sleep(0.2)
     except Exception as e:
         result = e
+
+    if test_context:
+        return result
 
     print(result)
     exit(code=0)

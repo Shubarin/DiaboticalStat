@@ -80,8 +80,7 @@ def request_response(params):
         response = requests.get(api_server, params=params)
         if response.status_code == 200:
             return response
-        else:
-            raise my_exceptions.UnavailableServer('ошибка сервера')
+        raise my_exceptions.UnavailableServer('ошибка сервера')
     except:
         raise my_exceptions.UnavailableServer('ошибка сервера')
 
@@ -152,7 +151,7 @@ def parse_command_line():
                                                  'in Diabotic via the API')
 
     parser.add_argument('mode', type=str, help='string line')
-    parser.add_argument('--mode', action='store_const', const=sum,
+    parser.add_argument('--mode', action='store_const', const=str,
                         help='Available values : r_macguffin, r_wo, '
                              'r_rocket_arena_2, r_shaft_arena_1,'
                              ' r_ca_2, r_ca_1')
@@ -177,6 +176,8 @@ def parse_command_line():
 
 def main(test_context=None):
     """Основная функция. Запускается при запуске файла в командной строке
+    Parameters:
+        test_context (dict): тестовый набор данных для запроса
     Returns:
         result (str): сообщение с результатом выполнения программы.
     """
